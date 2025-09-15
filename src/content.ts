@@ -1,26 +1,9 @@
 // Type declarations for cross-browser compatibility
-declare const chrome: {
-    runtime: {
-        getURL: (path: string) => string;
-        onMessage: {
-            addListener: (
-                callback: (
-                    message: any,
-                    sender: any,
-                    sendResponse: (response?: any) => void
-                ) => void
-            ) => void;
-        };
-    };
-    extension?: {
-        getURL: (path: string) => string;
-    };
-};
-
-declare const browser: typeof chrome;
+declare const chrome: any;
+declare const browser: any;
 
 // Firefox uses the browser namespace instead of chrome
-const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+const browserAPI = (typeof browser !== 'undefined') ? browser : chrome;
 
 const banners = {
     submissionAccepted: 'banners/submission-accepted.webp',
