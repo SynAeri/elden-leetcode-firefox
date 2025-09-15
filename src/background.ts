@@ -1,48 +1,7 @@
 import type { Actions } from './content';
 
-declare const chrome: {
-    webRequest: {
-        onBeforeRequest: {
-            addListener: (
-                callback: (details: WebRequestDetails) => void,
-                filter: { urls: string[] },
-                extraInfoSpec: string[]
-            ) => void;
-        };
-        onCompleted: {
-            addListener: (
-                callback: (details: WebRequestDetails & { responseHeaders?: Array<{name: string, value?: string}> }) => void,
-                filter: { urls: string[] },
-                extraInfoSpec: string[]
-            ) => void;
-        };
-        onBeforeResponse: {
-            addListener: (
-                callback: (details: WebRequestDetails & { responseHeaders?: Array<{name: string, value?: string}> }) => void,
-                filter: { urls: string[] },
-                extraInfoSpec: string[]
-            ) => void;
-        };
-    };
-    tabs: {
-        get: (tabId: number, callback: (tab: chrome.tabs.Tab) => void) => void;
-        sendMessage: (tabId: number, message: { action: Actions }, callback?: (response?: any) => void) => void;
-        query: (queryInfo: chrome.tabs.QueryInfo, callback: (result: chrome.tabs.Tab[]) => void) => void;
-    };
-    runtime: {
-        lastError?: { message?: string };
-        onMessage: {
-            addListener: (callback: (
-                message: any,
-                sender: chrome.runtime.MessageSender,
-                sendResponse: (response?: any) => void
-            ) => void) => void;
-        };
-    };
-    scripting: {
-        executeScript: (details: { target: { tabId: number }, files?: string[], func?: () => any }, callback?: (result: any[]) => void) => void;
-    };
-};
+// Firefox uses the browser namespace instead of chrome
+const browser = (typeof chrome !== 'undefined') ? chrome : this.browser;
 
 interface WebRequestDetails {
     url: string;
@@ -61,6 +20,7 @@ const pendingSubmissions = new Map<number, {
     retryCount?: number,
     hasDispatched?: boolean 
 }>();
+
 async function dispatch(action: Actions, details: WebRequestDetails): Promise<void> {
     const tabId = details.tabId;
     if (typeof tabId !== 'number' || !tabId) return;
@@ -68,16 +28,14 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
     console.log(`Dispatching action: ${action} to tab: ${tabId}`);
     
     try {
-        const tab = await new Promise<chrome.tabs.Tab | undefined>((resolve) => {
-            chrome.tabs.get(tabId, (tab) => {
-                if (chrome.runtime.lastError) {
-                    console.error('Error getting tab:', chrome.runtime.lastError);
-                    resolve(undefined);
-                } else {
-                    resolve(tab);
-                }
-            });
-        });
+        // Firefox tabs.get returns a promise
+        let tab;
+        try {
+            tab = await browser.tabs.get(tabId);
+        } catch (error) {
+            console.error('Error getting tab:', error);
+            return;
+        }
 
         if (!tab || !tab.active) {
             console.log(`Tab ${tabId} is not active or no longer exists`);
@@ -86,20 +44,20 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
 
         const sendMessage = (retryCount = 0) => {
             try {
-                chrome.tabs.sendMessage(tabId, { action }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('Error sending message:', chrome.runtime.lastError);
-                        
-                        if (retryCount < 2) { 
-                            const delay = Math.pow(2, retryCount) * 1000;
-                            console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1}/2)`);
-                            setTimeout(() => sendMessage(retryCount + 1), delay);
-                        } else {
-                            console.error('Max retries reached for tab', tabId);
-                            injectContentScript(tabId, action);
-                        }
-                    } else if (response) {
+                browser.tabs.sendMessage(tabId, { action }).then((response) => {
+                    if (response) {
                         console.log('Received response:', response);
+                    }
+                }).catch((error) => {
+                    console.error('Error sending message:', error);
+                    
+                    if (retryCount < 2) { 
+                        const delay = Math.pow(2, retryCount) * 1000;
+                        console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1}/2)`);
+                        setTimeout(() => sendMessage(retryCount + 1), delay);
+                    } else {
+                        console.error('Max retries reached for tab', tabId);
+                        injectContentScript(tabId, action);
                     }
                 });
             } catch (error) {
@@ -115,53 +73,26 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
 
 async function injectContentScript(tabId: number, action: Actions) {
     try {
-        await new Promise<void>((resolve, reject) => {
-            chrome.scripting.executeScript({
-                target: { tabId },
-                files: ['content.js']
-            }, () => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve();
-                }
-            });
+        // Firefox uses executeScript differently
+        await browser.tabs.executeScript(tabId, {
+            file: 'content.js'
         });
         
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        chrome.tabs.sendMessage(tabId, { action }, () => {
-            if (chrome.runtime.lastError) {
-                console.error('Still failed to send message after injection:', chrome.runtime.lastError);
-            } else {
-                console.log('Message sent successfully after script injection');
-            }
+        browser.tabs.sendMessage(tabId, { action }).catch((error) => {
+            console.error('Still failed to send message after injection:', error);
         });
     } catch (error) {
         console.error('Error injecting content script:', error);
         
         try {
-            await new Promise<void>((resolve, reject) => {
-                chrome.scripting.executeScript({
-                    target: { tabId },
-                    func: () => {
-                        console.log('Content script injected via fallback');
-                    }
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve();
-                    }
-                });
+            await browser.tabs.executeScript(tabId, {
+                code: 'console.log("Content script injected via fallback");'
             });
             
-            chrome.tabs.sendMessage(tabId, { action }, () => {
-                if (chrome.runtime.lastError) {
-                    console.error('Still failed after fallback injection:', chrome.runtime.lastError);
-                } else {
-                    console.log('Message sent successfully after fallback injection');
-                }
+            browser.tabs.sendMessage(tabId, { action }).catch((error) => {
+                console.error('Still failed after fallback injection:', error);
             });
         } catch (fallbackError) {
             console.error('Fallback injection also failed:', fallbackError);
@@ -276,12 +207,13 @@ async function fetchSubmissionResult(submissionId: string, tabId: number): Promi
         }
     }
 }
+
 function extractSubmissionId(url: string): string | null {
     const match = url.match(/\/submissions\/detail\/(\d+)\/check\//);
     return match ? match[1] : null;
 }
 
-chrome.webRequest.onBeforeRequest.addListener(
+browser.webRequest.onBeforeRequest.addListener(
     (detail: WebRequestDetails) => {
         console.log('Request intercepted:', detail.url, detail.method);
         
@@ -307,7 +239,7 @@ chrome.webRequest.onBeforeRequest.addListener(
     ['requestBody']
 );
 
-chrome.webRequest.onCompleted.addListener(
+browser.webRequest.onCompleted.addListener(
     (detail: WebRequestDetails) => {
         console.log('Request completed:', detail.url);
         
@@ -332,34 +264,36 @@ chrome.webRequest.onCompleted.addListener(
     ['responseHeaders']
 );
 
-chrome.webRequest.onBeforeResponse?.addListener(
-    (detail: WebRequestDetails) => {
-        if (detail.url.includes('leetcode.com/submissions/detail/') && detail.url.includes('/check/')) {
-            const submissionId = extractSubmissionId(detail.url);
-            if (submissionId && pendingSubmissions.has(detail.tabId)) {
-                console.log(`Got response for submission check: ${submissionId}`);
-                
-                setTimeout(() => {
-                    chrome.scripting.executeScript({
-                        target: { tabId: detail.tabId },
-                        func: () => {
-                            return {
-                                url: window.location.href,
-                                body: document.body.textContent
-                            };
-                        }
-                    }, (results) => {
-                        if (results && results[0]) {
-                            console.log('Page content:', results[0]);
-                        }
-                    });
-                }, 500);
+// Firefox might not have onBeforeResponse, so we add a check
+if (browser.webRequest.onBeforeResponse) {
+    browser.webRequest.onBeforeResponse.addListener(
+        (detail: WebRequestDetails) => {
+            if (detail.url.includes('leetcode.com/submissions/detail/') && detail.url.includes('/check/')) {
+                const submissionId = extractSubmissionId(detail.url);
+                if (submissionId && pendingSubmissions.has(detail.tabId)) {
+                    console.log(`Got response for submission check: ${submissionId}`);
+                    
+                    setTimeout(() => {
+                        browser.tabs.executeScript(detail.tabId, {
+                            code: `
+                                ({
+                                    url: window.location.href,
+                                    body: document.body.textContent
+                                })
+                            `
+                        }).then((results) => {
+                            if (results && results[0]) {
+                                console.log('Page content:', results[0]);
+                            }
+                        }).catch(console.error);
+                    }, 500);
+                }
             }
-        }
-    },
-    { urls: ['https://leetcode.com/*'] },
-    ['responseHeaders']
-);
+        },
+        { urls: ['https://leetcode.com/*'] },
+        ['responseHeaders']
+    );
+}
 
 setInterval(() => {
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
@@ -368,4 +302,4 @@ setInterval(() => {
             pendingSubmissions.delete(tabId);
         }
     }
-}, 60000); 
+}, 60000);

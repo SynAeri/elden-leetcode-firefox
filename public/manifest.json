@@ -2,7 +2,7 @@
     "name": "Elden LeetCode",
     "description": "Elden Ring experience for LeetCode",
     "version": "1.0",
-    "manifest_version": 3,
+    "manifest_version": 2,
     "action": {
         "default_icon": {
             "16": "assets/icon16.png",
@@ -18,13 +18,15 @@
         "128": "assets/icon128.png"
     },
     "permissions": [
-    "webRequest", 
-    "scripting",
+    "webRequest",
+    "webRequestBlocking",
+    "tabs",
     "activeTab"
   ],
     "host_permissions": ["https://leetcode.com/*"],
+
     "background": {
-        "service_worker": "background.js"
+        "scripts": ["background.js"]
     },
     "content_scripts": [
         {

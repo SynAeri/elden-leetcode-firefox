@@ -1,4 +1,5 @@
-declare const chrome: any;
+// Firefox uses the browser namespace instead of chrome
+const browser = (typeof chrome !== 'undefined') ? chrome : this.browser;
 
 const banners = {
     submissionAccepted: 'banners/submission-accepted.webp',
@@ -42,7 +43,7 @@ function initializeExtension() {
     console.log('Extension initialized, DOM ready');
 }
 
-chrome.runtime.onMessage.addListener((
+browser.runtime.onMessage.addListener((
     message: { action?: Actions } | undefined, 
     _sender: unknown, 
     sendResponse: (response?: any) => void
@@ -81,7 +82,7 @@ function show(
 
     console.log('Creating banner element...');
     const banner = document.createElement('img');
-    const bannerSrc = chrome.runtime.getURL(banners[action]);
+    const bannerSrc = browser.runtime.getURL ? browser.runtime.getURL(banners[action]) : browser.extension.getURL(banners[action]);
     console.log('Banner source URL:', bannerSrc);
     
     banner.src = bannerSrc;
@@ -123,7 +124,7 @@ function show(
         console.log('Banner image loaded successfully');
     };
 
-    const soundSrc = chrome.runtime.getURL(sounds[bannerSounds[action]]);
+    const soundSrc = browser.runtime.getURL ? browser.runtime.getURL(sounds[bannerSounds[action]]) : browser.extension.getURL(sounds[bannerSounds[action]]);
     console.log('Sound source URL:', soundSrc);
     
     const audio = new Audio(soundSrc);
