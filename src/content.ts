@@ -53,6 +53,14 @@ const delays = {
 } as const satisfies Partial<{ [delay in Actions]: number }>
 
 console.log('LeetCode Banner Extension - Content script loaded on:', window.location.href);
+console.log('Browser API available:', !!browserAPI);
+console.log('Runtime available:', !!browserAPI.runtime);
+
+// Add a test function to window for debugging
+(window as any).testBanner = () => {
+    console.log('Testing banner display...');
+    show('submissionAccepted');
+};
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeExtension);
