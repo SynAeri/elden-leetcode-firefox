@@ -1,4 +1,6 @@
-# Elden Ring LeetCode Extension
+# NOTE FORK OF https://github.com/Indra55/Elden-ring-leetcode-extension
+---
+# Elden Ring LeetCode Extension FireFox
 
 Enhance your LeetCode experience with Elden Ring–inspired notifications and achievements.
 
@@ -20,20 +22,15 @@ Enhance your LeetCode experience with Elden Ring–inspired notifications and ac
 
 ## Loading the Extension
 
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Select the `dist` directory from this project
+1. Open Chrome and navigate to `about:debugging#/runtime/this-firefox`
+3. Click **Load temporary addons**
+4. Select the `dist` directory from this project 
 
 ## Features
 
 * Elden Ring–styled notifications for LeetCode submissions
 * Achievement system for coding milestones
 * Immersive, game-inspired UI elements
-
-## Contributing
-
-Contributions are welcome. Please submit issues or enhancement requests.
 
 ## Credits
 

@@ -1,8 +1,6 @@
-// Type declarations for cross-browser compatibility
 declare const chrome: any;
 declare const browser: any;
 
-// Firefox uses the browser namespace instead of chrome
 const browserAPI = (typeof browser !== 'undefined') ? browser : chrome;
 
 const banners = {
@@ -39,7 +37,6 @@ console.log('LeetCode Banner Extension - Content script loaded on:', window.loca
 console.log('Browser API available:', !!browserAPI);
 console.log('Runtime available:', !!browserAPI.runtime);
 
-// Add a test function to window for debugging
 (window as any).testBanner = () => {
     console.log('Testing banner display...');
     show('submissionAccepted');

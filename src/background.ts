@@ -1,10 +1,8 @@
 import type { Actions } from './content';
 
-// Type declarations for cross-browser compatibility
 declare const chrome: any;
 declare const browser: any;
 
-// Firefox uses the browser namespace instead of chrome
 const browserAPI = (typeof browser !== 'undefined') ? browser : chrome;
 
 interface WebRequestDetails {
@@ -32,11 +30,10 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
     console.log(`Dispatching action: ${action} to tab: ${tabId}`);
     
     try {
-        // Check if tab exists and is active
+        // Check if tab exists 
         let tab: any;
         try {
             if (browserAPI.tabs.get.length > 1) {
-                // Chrome-style callback API
                 tab = await new Promise((resolve, reject) => {
                     browserAPI.tabs.get(tabId, (result: any) => {
                         if (browserAPI.runtime.lastError) {
@@ -47,7 +44,6 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
                     });
                 });
             } else {
-                // Firefox-style promise API
                 tab = await browserAPI.tabs.get(tabId);
             }
         } catch (error) {
@@ -65,7 +61,6 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
                 const messagePromise = browserAPI.tabs.sendMessage(tabId, { action });
                 
                 if (messagePromise && typeof messagePromise.then === 'function') {
-                    // Promise-based API (Firefox)
                     messagePromise.then((response: any) => {
                         if (response) {
                             console.log('Received response:', response);
@@ -114,7 +109,6 @@ async function dispatch(action: Actions, details: WebRequestDetails): Promise<vo
 
 async function injectContentScript(tabId: number, action: Actions): Promise<void> {
     try {
-        // Firefox uses executeScript differently
         await browserAPI.tabs.executeScript(tabId, {
             file: 'content.js'
         });
