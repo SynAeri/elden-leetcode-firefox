@@ -124,7 +124,9 @@ function show(
         console.log('Banner image loaded successfully');
     };
 
-    const soundSrc = browser.runtime.getURL ? browser.runtime.getURL(sounds[bannerSounds[action]]) : browser.extension.getURL(sounds[bannerSounds[action]]);
+    const soundSrc = browserAPI.runtime.getURL ? 
+        browserAPI.runtime.getURL(sounds[bannerSounds[action]]) : 
+        browserAPI.extension?.getURL(sounds[bannerSounds[action]]) || '';
     console.log('Sound source URL:', soundSrc);
     
     const audio = new Audio(soundSrc);

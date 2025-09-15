@@ -1,305 +1,168 @@
-import type { Actions } from './content';
-
 // Firefox uses the browser namespace instead of chrome
 const browser = (typeof chrome !== 'undefined') ? chrome : this.browser;
 
-interface WebRequestDetails {
-    url: string;
-    method: string;
-    tabId: number;
-    requestBody?: {
-        raw?: Array<{ bytes?: Uint8Array }>;
-        formData?: { [key: string]: string[] };
+const banners = {
+    submissionAccepted: 'banners/submission-accepted.webp',
+    submissionRejected: 'banners/submission-rejected.webp'
+} as const;
+
+export type Actions = keyof typeof banners
+
+const sounds = {
+    newItem: 'sounds/new-item.mp3',
+    enemyFailed: 'sounds/enemy-failed.mp3'
+} as const
+
+const bannerSounds: Record<keyof typeof banners, keyof typeof sounds> = {
+    submissionAccepted: 'newItem',
+    submissionRejected: 'enemyFailed'
+} as const;
+
+const animations = {
+    duration: 1000,
+    span: 3500,
+    easings: {
+        easeOutQuart: 'cubic-bezier(0.25, 1, 0.5, 1)'
+    }
+} as const
+
+const delays = {
+    submissionAccepted: 3000,
+    submissionRejected: 1000
+} as const satisfies Partial<{ [delay in Actions]: number }>
+
+console.log('LeetCode Banner Extension - Content script loaded on:', window.location.href);
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeExtension);
+} else {
+    initializeExtension();
+}
+
+function initializeExtension() {
+    console.log('Extension initialized, DOM ready');
+}
+
+browser.runtime.onMessage.addListener((
+    message: { action?: Actions } | undefined, 
+    _sender: unknown, 
+    sendResponse: (response?: any) => void
+) => {
+    console.log('Message received in content script:', message);
+    
+    if (!message?.action) {
+        console.log('No action in message');
+        sendResponse({ received: false, error: 'No action provided' });
+        return false;
+    }
+
+    console.log(`Showing banner for action: ${message.action}`);
+    try {
+        show(message.action);
+        sendResponse({ received: true, action: message.action });
+    } catch (error) {
+        console.error('Error showing banner:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        sendResponse({ received: false, error: errorMessage });
+    }
+    
+    return true;
+});
+
+function show(
+    action: Actions,
+    delay = delays[action as keyof typeof delays] ?? 1000
+) {
+    console.log(`show() called with action: ${action}, delay: ${delay}`);
+    
+    if (action in banners === false) {
+        console.error(`Invalid action: ${action}`);
+        return;
+    }
+
+    console.log('Creating banner element...');
+    const banner = document.createElement('img');
+    const bannerSrc = browser.runtime.getURL ? browser.runtime.getURL(banners[action]) : browser.extension.getURL(banners[action]);
+    console.log('Banner source URL:', bannerSrc);
+    
+    banner.src = bannerSrc;
+    banner.style.position = 'fixed';
+    banner.style.top = '0px';
+    banner.style.right = '0px';
+    banner.style.zIndex = '99999';
+    banner.style.width = '100%';
+    banner.style.height = '100vh';
+    banner.style.objectFit = 'cover';
+    banner.style.objectPosition = 'center';
+    banner.style.opacity = '0';
+    banner.style.pointerEvents = 'none';
+    banner.style.backgroundColor = 'transparent';
+
+    banner.onerror = () => {
+        console.error('Failed to load banner image:', bannerSrc);
+        const fallbackBanner = document.createElement('div');
+        fallbackBanner.style.position = 'fixed';
+        fallbackBanner.style.top = '50%';
+        fallbackBanner.style.left = '50%';
+        fallbackBanner.style.transform = 'translate(-50%, -50%)';
+        fallbackBanner.style.zIndex = '99999';
+        fallbackBanner.style.padding = '20px';
+        fallbackBanner.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        fallbackBanner.style.color = 'white';
+        fallbackBanner.style.fontSize = '24px';
+        fallbackBanner.style.borderRadius = '10px';
+        fallbackBanner.textContent = action.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        
+        document.body.appendChild(fallbackBanner);
+        
+        setTimeout(() => {
+            fallbackBanner.remove();
+        }, 3000);
     };
-    responseHeaders?: Array<{name: string, value?: string}>;
-}
 
-const pendingSubmissions = new Map<number, { 
-    timestamp: number, 
-    submissionId?: string, 
-    retryCount?: number,
-    hasDispatched?: boolean 
-}>();
+    banner.onload = () => {
+        console.log('Banner image loaded successfully');
+    };
 
-async function dispatch(action: Actions, details: WebRequestDetails): Promise<void> {
-    const tabId = details.tabId;
-    if (typeof tabId !== 'number' || !tabId) return;
-
-    console.log(`Dispatching action: ${action} to tab: ${tabId}`);
+    const soundSrc = browserAPI.runtime.getURL ? browserAPI.runtime.getURL(sounds[bannerSounds[action]]) : (browserAPI as any).extension.getURL(sounds[bannerSounds[action]]);
+    console.log('Sound source URL:', soundSrc);
     
-    try {
-        // Firefox tabs.get returns a promise
-        let tab;
-        try {
-            tab = await browser.tabs.get(tabId);
-        } catch (error) {
-            console.error('Error getting tab:', error);
-            return;
-        }
+    const audio = new Audio(soundSrc);
+    audio.volume = 0.25;
 
-        if (!tab || !tab.active) {
-            console.log(`Tab ${tabId} is not active or no longer exists`);
-            return;
-        }
+    console.log(`Setting timeout for ${delay}ms before showing banner`);
+    
+    setTimeout(() => {
+        console.log('Showing banner now...');
+        
+        requestAnimationFrame(() => {
+            console.log('Appending banner to body');
+            document.body.appendChild(banner);
 
-        const sendMessage = (retryCount = 0) => {
-            try {
-                browser.tabs.sendMessage(tabId, { action }).then((response) => {
-                    if (response) {
-                        console.log('Received response:', response);
-                    }
-                }).catch((error) => {
-                    console.error('Error sending message:', error);
-                    
-                    if (retryCount < 2) { 
-                        const delay = Math.pow(2, retryCount) * 1000;
-                        console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1}/2)`);
-                        setTimeout(() => sendMessage(retryCount + 1), delay);
-                    } else {
-                        console.error('Max retries reached for tab', tabId);
-                        injectContentScript(tabId, action);
-                    }
-                });
-            } catch (error) {
-                console.error('Error in dispatch:', error);
-            }
-        };
-        
-        sendMessage(0);
-    } catch (error) {
-        console.error('Error in dispatch:', error);
-    }
-}
-
-async function injectContentScript(tabId: number, action: Actions) {
-    try {
-        // Firefox uses executeScript differently
-        await browser.tabs.executeScript(tabId, {
-            file: 'content.js'
-        });
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        browser.tabs.sendMessage(tabId, { action }).catch((error) => {
-            console.error('Still failed to send message after injection:', error);
-        });
-    } catch (error) {
-        console.error('Error injecting content script:', error);
-        
-        try {
-            await browser.tabs.executeScript(tabId, {
-                code: 'console.log("Content script injected via fallback");'
+            banner.animate([{ opacity: 0 }, { opacity: 1 }], {
+                duration: animations.duration,
+                easing: animations.easings.easeOutQuart,
+                fill: 'forwards'
             });
-            
-            browser.tabs.sendMessage(tabId, { action }).catch((error) => {
-                console.error('Still failed after fallback injection:', error);
+
+            audio.play().catch((error) => {
+                console.log('Could not play sound:', error);
             });
-        } catch (fallbackError) {
-            console.error('Fallback injection also failed:', fallbackError);
-        }
-    }
-}
-
-function readBody(detail: WebRequestDetails): any {
-    if (detail.method !== 'POST') return null;
-
-    if (detail.requestBody?.formData) {
-        return detail.requestBody.formData;
-    }
-
-    const bytes = detail.requestBody?.raw?.[0]?.bytes;
-    if (!bytes) return null;
-
-    const decoder = new TextDecoder('utf-8');
-    const jsonStr = decoder.decode(bytes);
-
-    try {
-        return JSON.parse(jsonStr);
-    } catch {
-        return jsonStr;
-    }
-}
-
-const matchLeetCodeGraphQL = (detail: WebRequestDetails, operationName: string): boolean => {
-    if (detail.url !== 'https://leetcode.com/graphql') return false;
-    if (detail.method !== 'POST') return false;
-
-    const body = readBody(detail);
-    
-    if (body && typeof body === 'object' && 'query' in body) {
-        const query = Array.isArray(body.query) ? body.query[0] : body.query;
-        return typeof query === 'string' && query.includes(operationName);
-    }
-    
-    if (body && typeof body === 'object' && 'operationName' in body) {
-        return body.operationName === operationName;
-    }
-
-    return false;
-};
-
-async function fetchSubmissionResult(submissionId: string, tabId: number): Promise<void> {
-    try {
-        const url = `https://leetcode.com/submissions/detail/${submissionId}/check/`;
-        console.log(`Polling submission result from: ${url}`);
-        
-        const response = await fetch(url, {
-            credentials: 'include',
-            headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; LeetCode Extension)' }
         });
-        
-        if (!response.ok) {
-            console.error(`Failed to fetch submission result: ${response.status}`);
-            return;
-        }
-        
-        const data = await response.json();
-        console.log('Submission result data:', data);
-        
-        const status = data.state; 
-        const statusDisplay = data.status_display || '';
-        const statusCode = data.status_code;
+    }, delay);
 
-        let action: Actions | null = null;
+    setTimeout(() => {
+        console.log('Starting banner fade out...');
         
-        if (status === 'SUCCESS' && (statusCode === 10 || statusDisplay === 'Accepted')) {
-            action = 'submissionAccepted';
-        } else if (status === 'SUCCESS') {
-            action = 'submissionRejected';
-        } else {
-            console.log('Submission still pending, state:', status, 'display:', statusDisplay);
-            
-            const pending = pendingSubmissions.get(tabId);
-            if (pending) {
-                const retryCount = (pending.retryCount || 0) + 1;
-                if (retryCount < 15) { 
-                    pending.retryCount = retryCount;
-                    pendingSubmissions.set(tabId, pending);
-                    
-                    const delay = Math.min(retryCount * 1000, 5000); 
-                    setTimeout(() => fetchSubmissionResult(submissionId, tabId), delay);
-                } else {
-                    console.log('Max retries reached for submission check.');
-                    pendingSubmissions.delete(tabId);
-                }
-            }
-            return; 
-        }
+        banner.animate([{ opacity: 1 }, { opacity: 0 }], {
+            duration: animations.duration,
+            easing: animations.easings.easeOutQuart,
+            fill: 'forwards'
+        });
 
-        if (action) {
-            console.log(`Determined final action: ${action} for state: ${status}`);
-            dispatch(action, { url: '', method: 'POST', tabId });
-            pendingSubmissions.delete(tabId);
-        }
-        
-    } catch (error) {
-        console.error('Error fetching submission result:', error);
-        const pending = pendingSubmissions.get(tabId);
-        if (pending) {
-            const retryCount = (pending.retryCount || 0) + 1;
-            if (retryCount < 3) {
-                 pending.retryCount = retryCount;
-                 pendingSubmissions.set(tabId, pending);
-                 setTimeout(() => fetchSubmissionResult(submissionId, tabId), 3000);
-            } else {
-                 pendingSubmissions.delete(tabId);
-            }
-        }
-    }
+        setTimeout(() => {
+            console.log('Removing banner from DOM');
+            banner.remove();
+        }, animations.duration);
+    }, animations.span + delay);
 }
-
-function extractSubmissionId(url: string): string | null {
-    const match = url.match(/\/submissions\/detail\/(\d+)\/check\//);
-    return match ? match[1] : null;
-}
-
-browser.webRequest.onBeforeRequest.addListener(
-    (detail: WebRequestDetails) => {
-        console.log('Request intercepted:', detail.url, detail.method);
-        
-        if (detail.url === 'https://leetcode.com/graphql') {
-            const body = readBody(detail);
-            console.log('GraphQL request body:', body);
-            
-            if (matchLeetCodeGraphQL(detail, 'submitCode')) {
-                console.log('Submission detected!');
-                pendingSubmissions.set(detail.tabId, { timestamp: Date.now(), retryCount: 0 });
-                return;
-            }
-        }
-        
-        if (detail.url.includes('leetcode.com') && detail.url.includes('submit') && 
-            detail.method === 'POST' && !detail.url.includes('/check/')) {
-            console.log('Direct submission URL detected:', detail.url);
-            pendingSubmissions.set(detail.tabId, { timestamp: Date.now(), retryCount: 0, hasDispatched: false });
-            return;
-        }
-    },
-    { urls: ['https://leetcode.com/*'] },
-    ['requestBody']
-);
-
-browser.webRequest.onCompleted.addListener(
-    (detail: WebRequestDetails) => {
-        console.log('Request completed:', detail.url);
-        
-        if (detail.url.includes('leetcode.com/submissions/detail/') && detail.url.includes('/check/')) {
-            const submissionId = extractSubmissionId(detail.url);
-            if (submissionId && pendingSubmissions.has(detail.tabId)) {
-                console.log(`Submission status check completed for ID: ${submissionId}`);
-                
-                const pending = pendingSubmissions.get(detail.tabId);
-                if (pending) {
-                    pending.submissionId = submissionId;
-                    pendingSubmissions.set(detail.tabId, pending);
-                }
-                
-                setTimeout(() => {
-                    fetchSubmissionResult(submissionId, detail.tabId);
-                }, 1000);
-            }
-        }
-    },
-    { urls: ['https://leetcode.com/*'] },
-    ['responseHeaders']
-);
-
-// Firefox might not have onBeforeResponse, so we add a check
-if (browser.webRequest.onBeforeResponse) {
-    browser.webRequest.onBeforeResponse.addListener(
-        (detail: WebRequestDetails) => {
-            if (detail.url.includes('leetcode.com/submissions/detail/') && detail.url.includes('/check/')) {
-                const submissionId = extractSubmissionId(detail.url);
-                if (submissionId && pendingSubmissions.has(detail.tabId)) {
-                    console.log(`Got response for submission check: ${submissionId}`);
-                    
-                    setTimeout(() => {
-                        browser.tabs.executeScript(detail.tabId, {
-                            code: `
-                                ({
-                                    url: window.location.href,
-                                    body: document.body.textContent
-                                })
-                            `
-                        }).then((results) => {
-                            if (results && results[0]) {
-                                console.log('Page content:', results[0]);
-                            }
-                        }).catch(console.error);
-                    }, 500);
-                }
-            }
-        },
-        { urls: ['https://leetcode.com/*'] },
-        ['responseHeaders']
-    );
-}
-
-setInterval(() => {
-    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-    for (const [tabId, submission] of pendingSubmissions.entries()) {
-        if (submission.timestamp < fiveMinutesAgo) {
-            pendingSubmissions.delete(tabId);
-        }
-    }
-}, 60000);
