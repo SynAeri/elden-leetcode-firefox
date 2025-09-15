@@ -1,5 +1,26 @@
+// Type declarations for cross-browser compatibility
+declare const chrome: {
+    runtime: {
+        getURL: (path: string) => string;
+        onMessage: {
+            addListener: (
+                callback: (
+                    message: any,
+                    sender: any,
+                    sendResponse: (response?: any) => void
+                ) => void
+            ) => void;
+        };
+    };
+    extension?: {
+        getURL: (path: string) => string;
+    };
+};
+
+declare const browser: typeof chrome;
+
 // Firefox uses the browser namespace instead of chrome
-const browser = (typeof chrome !== 'undefined') ? chrome : this.browser;
+const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
 
 const banners = {
     submissionAccepted: 'banners/submission-accepted.webp',
@@ -43,7 +64,7 @@ function initializeExtension() {
     console.log('Extension initialized, DOM ready');
 }
 
-browser.runtime.onMessage.addListener((
+browserAPI.runtime.onMessage.addListener((
     message: { action?: Actions } | undefined, 
     _sender: unknown, 
     sendResponse: (response?: any) => void
@@ -82,7 +103,9 @@ function show(
 
     console.log('Creating banner element...');
     const banner = document.createElement('img');
-    const bannerSrc = browser.runtime.getURL ? browser.runtime.getURL(banners[action]) : browser.extension.getURL(banners[action]);
+    const bannerSrc = browserAPI.runtime.getURL ? 
+        browserAPI.runtime.getURL(banners[action]) : 
+        browserAPI.extension?.getURL(banners[action]) || '';
     console.log('Banner source URL:', bannerSrc);
     
     banner.src = bannerSrc;
